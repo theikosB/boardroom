@@ -61,7 +61,7 @@ To add another game, or to make one of these playable, follow [docs/adding-a-gam
 
 ## Deployment
 
-Deployment is not decided, and this repo does not assume a paid host. When the app is ready to leave a laptop, we will compare options that can hold one long-lived Node process and a WebSocket, including free tiers. A host that sleeps will wipe in-memory rooms. That choice waits until there is a game to host.
+`npm run build` writes the static site to `dist/`. `vercel.json` tells a host to serve that folder. The multiplayer process is still undecided, and this repo does not assume a paid host. When rooms exist, the host has to stay awake, because game state will live in memory. A host that sleeps will wipe those rooms.
 
 ## Known issues
 
