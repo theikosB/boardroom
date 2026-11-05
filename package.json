@@ -1,0 +1,20 @@
+{
+  "name": "boardroom",
+  "private": true,
+  "version": "0.0.0",
+  "workspaces": [
+    "client",
+    "shared"
+  ],
+  "scripts": {
+    "dev": "npm run dev -w @boardroom/client",
+    "build": "npm run typecheck -w @boardroom/shared && npm run build -w @boardroom/client",
+    "typecheck": "npm run typecheck -w @boardroom/shared && npm run typecheck -w @boardroom/client",
+    "test": "npm run test -w @boardroom/shared",
+    "lint": "npm run lint -w @boardroom/client",
+    "preview": "npm run preview -w @boardroom/client"
+  },
+  "engines": {
+    "node": ">=22"
+  }
+}
