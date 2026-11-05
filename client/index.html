@@ -13,11 +13,15 @@
       (function () {
         try {
           var stored = localStorage.getItem("boardroom-theme");
-          var theme = stored === "light" ? "light" : "dark";
-          document.documentElement.classList.toggle("dark", theme === "dark");
-          document.documentElement.style.colorScheme = theme;
+          var choice = stored === "light" || stored === "dark" ? stored : "system";
+          var systemDark = window.matchMedia("(prefers-color-scheme: dark)").matches;
+          var dark = choice === "dark" || (choice === "system" && systemDark);
+          document.documentElement.classList.toggle("dark", dark);
+          document.documentElement.style.colorScheme = dark ? "dark" : "light";
         } catch (error) {
-          document.documentElement.classList.add("dark");
+          var fallbackDark = window.matchMedia("(prefers-color-scheme: dark)").matches;
+          document.documentElement.classList.toggle("dark", fallbackDark);
+          document.documentElement.style.colorScheme = fallbackDark ? "dark" : "light";
         }
       })();
     </script>

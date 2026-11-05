@@ -26,7 +26,7 @@ npm install
 npm run dev
 ```
 
-The site is served at [http://localhost:5174](http://localhost:5174). No environment variables are required. There is no `.env` file in this milestone.
+The site is served at [http://localhost:5174](http://localhost:5174). It follows the system light or dark theme until you pick one. No environment variables are required. There is no `.env` file in this milestone.
 
 ## Scripts
 
