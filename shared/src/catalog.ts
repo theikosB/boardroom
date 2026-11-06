@@ -35,7 +35,7 @@ export interface GameCatalogEntry {
  * The catalog test fails if a card says "playable" without an id here,
  * or the other way around.
  */
-export const PLAYABLE_GAME_IDS = ["battleship", "uno"] as const satisfies readonly GameId[];
+export const PLAYABLE_GAME_IDS = ["battleship", "uno", "poker"] as const satisfies readonly GameId[];
 
 export type PlayableGameId = (typeof PLAYABLE_GAME_IDS)[number];
 
@@ -69,7 +69,7 @@ export const GAMES: readonly GameCatalogEntry[] = [
     minPlayers: 2,
     maxPlayers: 8,
     difficulty: "medium",
-    availability: "coming-soon",
+    availability: "playable",
   },
   {
     id: "monopoly",

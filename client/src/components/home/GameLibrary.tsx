@@ -11,8 +11,8 @@ export function GameLibrary({ onInspect }: GameLibraryProps) {
       <div className="max-w-2xl">
         <h2 className="text-3xl sm:text-4xl">The shelf</h2>
         <p className="mt-3 text-lg text-muted-foreground">
-          Ten games. Battleship and UNO can be played in a room. The other eight stay here until
-          their rules are written.
+          Ten games. Battleship, UNO, and Poker can be played in a room. The other seven stay here
+          until their rules are written.
         </p>
       </div>
       <div className="mt-8 grid gap-5 sm:grid-cols-2 xl:grid-cols-3">

@@ -35,6 +35,6 @@ function joinRoomCopy(): DialogCopy {
 function gameCopy(game: GameCatalogEntry): DialogCopy {
   return {
     title: `${game.name} is still on the shelf`,
-    body: `${game.name} is listed so you can see what is coming. Its rules are not implemented. Battleship and UNO are the games you can play now.`,
+    body: `${game.name} is listed so you can see what is coming. Its rules are not implemented. Battleship, UNO, and Poker are the games you can play now.`,
   };
 }

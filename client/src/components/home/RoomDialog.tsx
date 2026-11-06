@@ -63,7 +63,7 @@ export function RoomDialog({ intent, onOpenChange }: RoomDialogProps) {
           </DialogTitle>
           <DialogDescription className="text-base leading-relaxed text-muted-foreground">
             {creating
-              ? "You will be a player at this table. Once friends sit down, the host picks Battleship or UNO and starts."
+              ? "You will be a player at this table. Once friends sit down, the host picks Battleship, UNO, or Poker and starts."
               : "Type the code your friend sent, then pick the name on your seat."}
           </DialogDescription>
         </DialogHeader>

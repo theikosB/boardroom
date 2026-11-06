@@ -1,6 +1,6 @@
 # Adding a game
 
-Boardroom is a shelf of games on top of one room system. A new game should plug in without changing how people create a room, reconnect, or take turns at the table. This guide is the whole path. The server, the socket, Battleship, and UNO are in the repo. The other eight games are still catalog rows.
+Boardroom is a shelf of games on top of one room system. A new game should plug in without changing how people create a room, reconnect, or take turns at the table. This guide is the whole path. The server, the socket, Battleship, UNO, and Poker are in the repo. The other seven games are still catalog rows.
 
 ## Rules every game inherits
 

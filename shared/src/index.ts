@@ -41,6 +41,17 @@ export type {
 } from "./games/battleship.ts";
 export type { UnoCard, UnoColor, UnoMove, UnoOpponent, UnoRank, UnoView } from "./games/uno.ts";
 export { UNO_COLORS, UNO_RANKS } from "./games/uno.ts";
+export type {
+  PokerCard,
+  PokerMove,
+  PokerOpponent,
+  PokerRank,
+  PokerStreet,
+  PokerSuit,
+  PokerView,
+  PokerWinner,
+} from "./games/poker.ts";
+export { POKER_RANKS, POKER_SUITS } from "./games/poker.ts";
 export type { GameUpdate } from "./protocol.ts";
 export {
   battleshipMoveSchema,
@@ -53,5 +64,6 @@ export {
   readySchema,
   rejoinRoomSchema,
   roomCodeSchema,
+  pokerMoveSchema,
   unoMoveSchema,
 } from "./schemas.ts";

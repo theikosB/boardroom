@@ -35,7 +35,7 @@ export const kickSchema = z.object({
 });
 
 export const configureSchema = z.object({
-  gameId: z.enum(["battleship", "uno"]),
+  gameId: z.enum(["battleship", "uno", "poker"]),
 });
 
 export const unoMoveSchema = z.discriminatedUnion("type", [
@@ -83,6 +83,17 @@ export const battleshipMoveSchema = z.discriminatedUnion("type", [
     type: z.literal("fire"),
     r: z.number().int().min(0).max(9),
     c: z.number().int().min(0).max(9),
+  }),
+]);
+
+export const pokerMoveSchema = z.discriminatedUnion("type", [
+  z.object({ type: z.literal("fold") }),
+  z.object({ type: z.literal("check") }),
+  z.object({ type: z.literal("call") }),
+  z.object({ type: z.literal("deal") }),
+  z.object({
+    type: z.literal("bet"),
+    amount: z.number().int().min(1).max(100_000),
   }),
 ]);
 

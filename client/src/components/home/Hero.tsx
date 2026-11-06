@@ -16,8 +16,8 @@ export function Hero({ onCreate, onJoin }: HeroProps) {
         </h1>
         <p className="mt-5 max-w-xl text-lg leading-relaxed text-muted-foreground">
           Boardroom is a private place to play board games together. Someone opens a room,
-          shares a short code, and everyone else sits down from their own screen. Battleship
-          and UNO are ready. The rest of the shelf is still being built.
+          shares a short code, and everyone else sits down from their own screen. Battleship,
+          UNO, and Poker are ready. The rest of the shelf is still being built.
         </p>
         <div className="mt-8 flex flex-col gap-3 sm:flex-row">
           <Button type="button" className="h-12 px-5 text-base" onClick={onCreate}>

@@ -237,7 +237,7 @@ export function attachSockets(io: Server): void {
       const seat = seated(socket);
       const parsed = configureSchema.safeParse(payload);
       if (!seat || !parsed.success) {
-        reply({ ok: false, message: "Pick Battleship or UNO." });
+        reply({ ok: false, message: "Pick Battleship, UNO, or Poker." });
         return;
       }
       void enqueue(seat.code, () => {

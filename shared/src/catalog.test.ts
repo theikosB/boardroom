@@ -30,7 +30,7 @@ describe("game catalog", () => {
       const implemented = (PLAYABLE_GAME_IDS as readonly string[]).includes(game.id);
       expect(game.availability === "playable").toBe(implemented);
     }
-    expect([...PLAYABLE_GAME_IDS]).toEqual(["battleship", "uno"]);
+    expect([...PLAYABLE_GAME_IDS]).toEqual(["battleship", "uno", "poker"]);
   });
 
   it("gives every game a description and a legal player range", () => {

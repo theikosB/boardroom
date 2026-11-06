@@ -161,6 +161,28 @@ describe("rooms", () => {
     expect(raw).not.toContain(created.session.token);
   });
 
+  it("hides poker hole cards from the other seat", () => {
+    resetRooms();
+    const created = createRoom("Ada", "sock-poker-ada");
+    if (!created.ok) throw new Error(created.message);
+    expect(chooseGame(created.session.code, created.session.playerId, "poker").ok).toBe(true);
+    const joined = joinRoom(created.session.code, "Bea", "sock-poker-bea");
+    if (!joined.ok) throw new Error(joined.message);
+    const started = startMatch(created.session.code, created.session.playerId);
+    expect(started.ok).toBe(true);
+    const views = snapshot(created.session.code)?.views ?? [];
+    const ada = views.find((view) => view.playerId === created.session.playerId);
+    const bea = views.find((view) => view.playerId === joined.session.playerId);
+    expect(ada?.update.gameId).toBe("poker");
+    if (ada?.update.gameId !== "poker" || bea?.update.gameId !== "poker") throw new Error("expected poker");
+    expect(ada.update.view.yourHole).toHaveLength(2);
+    const raw = JSON.stringify(ada.update.view);
+    for (const card of bea.update.view.yourHole) {
+      expect(raw).not.toContain(`"id":"${card.id}"`);
+    }
+    expect(raw).not.toContain(created.session.token);
+  });
+
   it("limits how fast a client can ask for a seat", () => {
     resetRooms();
     const now = 5_000;

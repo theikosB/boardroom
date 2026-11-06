@@ -12,7 +12,7 @@ const STEPS = [
   {
     number: "3",
     title: "Pick a game",
-    body: "The host picks Battleship or UNO. Battleship hides two fleets. UNO hides every hand. The other games stay on the shelf.",
+    body: "The host picks Battleship, UNO, or Poker. Hole cards stay hidden until a showdown. The other games stay on the shelf.",
   },
 ];
 
@@ -22,7 +22,7 @@ export function HowItWorks() {
       <div className="max-w-2xl">
         <h2 className="text-3xl sm:text-4xl">How a night works</h2>
         <p className="mt-3 text-lg text-muted-foreground">
-          Open a room, share the code, and play Battleship. The server is the referee.
+          Open a room, share the code, and play. The server is the referee.
         </p>
       </div>
       <ol className="mt-8 grid gap-4 md:grid-cols-3">

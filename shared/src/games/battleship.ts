@@ -73,7 +73,7 @@ export interface PublicPlayer {
 export interface PublicRoom {
   code: string;
   phase: "lobby" | "playing" | "finished";
-  gameId: "battleship" | "uno" | null;
+  gameId: "battleship" | "uno" | "poker" | null;
   hostId: string;
   players: PublicPlayer[];
   version: number;
