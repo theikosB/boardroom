@@ -12,7 +12,7 @@ const STEPS = [
   {
     number: "3",
     title: "Pick a game",
-    body: "This room plays Battleship. Both players hide a fleet, then take turns firing. The other games stay on the shelf until their rules are written.",
+    body: "The host picks Battleship or UNO. Battleship hides two fleets. UNO hides every hand. The other games stay on the shelf.",
   },
 ];
 

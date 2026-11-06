@@ -35,8 +35,27 @@ export const kickSchema = z.object({
 });
 
 export const configureSchema = z.object({
-  gameId: z.literal("battleship"),
+  gameId: z.enum(["battleship", "uno"]),
 });
+
+export const unoMoveSchema = z.discriminatedUnion("type", [
+  z.object({
+    type: z.literal("play"),
+    cardId: z.string().trim().min(1).max(40),
+    color: z.enum(["red", "yellow", "green", "blue"]).optional(),
+  }),
+  z.object({ type: z.literal("draw") }),
+  z.object({ type: z.literal("pass") }),
+  z.object({ type: z.literal("call-uno") }),
+  z.object({
+    type: z.literal("catch"),
+    playerId: z.string().trim().min(1).max(80),
+  }),
+  z.object({
+    type: z.literal("choose-color"),
+    color: z.enum(["red", "yellow", "green", "blue"]),
+  }),
+]);
 
 const shipKindSchema = z.enum([
   "carrier",

@@ -1,6 +1,6 @@
 # Boardroom
 
-Boardroom is a private browser table for a small group of friends. Someone opens a room, shares a five-character code, and one friend sits down from their own screen. The server is the referee. Battleship is the game you can play. The other eight games are on the shelf and are not playable yet.
+Boardroom is a private browser table for a small group of friends. Someone opens a room, shares a five-character code, and one friend sits down from their own screen. The server is the referee. Battleship and UNO are the games you can play. The other seven games are on the shelf and are not playable yet.
 
 There is no account system and no database. Rooms live in the memory of one Node process.
 
@@ -20,9 +20,9 @@ That starts the referee on port 4010 and the site on port 5174. Open [http://loc
 1. In the first browser, choose **Create a room**, enter a name, and open the room.
 2. Copy the five-character code.
 3. In the second browser, choose **Join with a code**, enter that code and a name.
-4. The host presses **Start Battleship**. Ready is visible, and the host can start when someone is not ready.
-5. Each player places five ships and confirms the fleet. Ships may touch, including corners. They cannot overlap.
-6. The server picks the first shot at random. Turns alternate on a hit or a miss. A sunk ship tells the shooter which ship it was. The other fleet stays hidden until the match ends.
+4. The host picks Battleship or UNO, then presses start. Ready is visible, and the host can start when someone is not ready.
+5. Battleship is two players. Each person places five ships and confirms the fleet. Ships may touch, including corners. They cannot overlap. Turns alternate on a hit or a miss.
+6. UNO is two to ten players. Match the color or the symbol and empty your hand. Every other hand stays hidden.
 
 A refresh keeps your seat. Closing a tab waits two minutes and does not forfeit. **Leave** during a match does forfeit. After the two minutes, if the host is still away and the other player is connected, that other player becomes the host.
 
@@ -44,7 +44,7 @@ On the same Wi-Fi, the second device can open `http://<this-computer-ip>:5174`. 
 
 ```text
 client/     React, TypeScript, Vite, Tailwind, shadcn/ui
-server/     Express, Socket.IO, room rules, Battleship
+server/     Express, Socket.IO, room rules, Battleship, UNO
 shared/     Catalog, socket payloads, and the GameEngine contract
 docs/       How to add a game
 ```
@@ -53,9 +53,9 @@ docs/       How to add a game
 
 ## Shelf
 
-Battleship is playable. These stay coming soon:
+Battleship and UNO are playable. These stay coming soon:
 
-UNO, Poker (Texas Hold'em), Monopoly, Risk, Catan, Ticket to Ride, Wingspan, and Splendor.
+Poker (Texas Hold'em), Monopoly, Risk, Catan, Ticket to Ride, Wingspan, and Splendor.
 
 To add a game, follow [docs/adding-a-game.md](docs/adding-a-game.md). Artwork on the shelf is original.
 

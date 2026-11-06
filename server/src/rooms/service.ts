@@ -1,14 +1,22 @@
 import { randomBytes } from "node:crypto";
 import {
+  GAMES,
   ROOM_CODE_ALPHABET,
-  battleshipMoveSchema,
   type GameUpdate,
+  type PlayableGameId,
   type PublicRoom,
   type SeatSession,
 } from "@boardroom/shared";
 import { createReconnectToken, reconnectTokenMatches } from "../auth/reconnectToken.ts";
-import { endByHost, forfeit, type BattleshipState } from "../games/battleship/engine.ts";
-import { battleshipEngine } from "../games/registry.ts";
+import {
+  createMatch,
+  finishByHost,
+  playerLeft,
+  seatedIds,
+  submitMove,
+  viewUpdate,
+  type Match,
+} from "../games/match.ts";
 
 export const RECONNECT_GRACE_MS = 2 * 60 * 1000;
 export const EMPTY_LOBBY_MS = 30 * 60 * 1000;
@@ -38,9 +46,9 @@ interface Room {
   code: string;
   hostId: string;
   phase: "lobby" | "playing" | "finished";
-  gameId: "battleship";
+  gameId: PlayableGameId;
   players: Map<string, Seat>;
-  game: BattleshipState | null;
+  game: Match | null;
   version: number;
   emptySince: number | null;
   openedAt: number;
@@ -188,7 +196,7 @@ export function joinRoom(code: string, name: string, socketId: string): Success<
   const room = findRoom(code);
   if (!room) return fail("That room does not exist.");
   if (room.phase !== "lobby") return fail("This game has already started.");
-  if (room.players.size >= 2) return fail("This room is full.");
+  if (room.players.size >= seatLimit(room.gameId).max) return fail("This room is full.");
   if ([...room.players.values()].some((seat) => seat.socketId === socketId)) {
     return fail("You are already in this room.");
   }
@@ -270,8 +278,11 @@ export function startMatch(code: string, playerId: string): Success<{ room: Publ
   if (!located.ok) return located;
   if (located.seat.id !== located.room.hostId) return fail("Only the host can start.");
   if (located.room.phase !== "lobby") return fail("The match has already started.");
-  if (located.room.players.size !== 2) return fail("Battleship needs two players.");
-  located.room.game = battleshipEngine.createGame([...located.room.players.keys()]);
+  const rule = seatLimit(located.room.gameId);
+  if (located.room.players.size < rule.min || located.room.players.size > rule.max) {
+    return fail(countMessage(rule));
+  }
+  located.room.game = createMatch(located.room.gameId, [...located.room.players.keys()]);
   located.room.phase = "playing";
   located.room.startedAt = Date.now();
   located.room.finishedAt = null;
@@ -285,12 +296,10 @@ export function playMove(code: string, playerId: string, rawMove: unknown): Succ
   const located = locate(code, playerId);
   if (!located.ok) return located;
   if (located.room.phase !== "playing" || !located.room.game) return fail("The match has not started.");
-  const parsed = battleshipMoveSchema.safeParse(rawMove);
-  if (!parsed.success) return fail("That move is not valid.");
-  const check = battleshipEngine.validateMove(located.room.game, playerId, parsed.data);
-  if (!check.ok) return fail(check.reason);
-  located.room.game = battleshipEngine.applyMove(located.room.game, playerId, parsed.data);
-  if (battleshipEngine.getOutcome(located.room.game)) {
+  const played = submitMove(located.room.game, playerId, rawMove);
+  if (!played.ok) return fail(played.message);
+  located.room.game = played.match;
+  if (played.finished) {
     located.room.phase = "finished";
     located.room.finishedAt = Date.now();
     console.info("room finished");
@@ -304,20 +313,20 @@ export function leaveRoom(code: string, playerId: string): Success<LeaveGranted>
   if (!located.ok) return located;
   const { room, seat } = located;
   let departedUpdate: GameUpdate | null = null;
-  if (room.phase === "playing" && room.game) {
-    room.game = forfeit(room.game, playerId);
-    room.phase = "finished";
-    room.finishedAt = Date.now();
-    console.info("forfeit");
+  if (room.phase === "playing" && room.game && seatedIds(room.game).includes(playerId)) {
+    const before = viewUpdate(room.game, playerId);
+    const left = playerLeft(room.game, playerId);
+    room.game = left.match;
+    if (left.finished) {
+      room.phase = "finished";
+      room.finishedAt = Date.now();
+      console.info("forfeit");
+    }
+    const current = seatedIds(room.game).includes(playerId) ? viewUpdate(room.game, playerId) : before;
+    departedUpdate = current;
   }
   touch(room);
-  if (room.game && room.game.playerIds.includes(playerId)) {
-    departedUpdate = {
-      version: room.version,
-      gameId: "battleship",
-      view: battleshipEngine.getPlayerView(room.game, playerId),
-    };
-  }
+  if (departedUpdate) departedUpdate = { ...departedUpdate, version: room.version };
   const departedSocketId = seat.socketId;
   room.players.delete(playerId);
   if (room.players.size === 0) {
@@ -336,7 +345,7 @@ export function endMatch(code: string, playerId: string): Success<{ room: Public
   if (!located.ok) return located;
   if (located.seat.id !== located.room.hostId) return fail("Only the host can end the match.");
   if (located.room.phase === "lobby" || !located.room.game) return fail("The match has not started.");
-  located.room.game = endByHost(located.room.game);
+  located.room.game = finishByHost(located.room.game);
   located.room.phase = "finished";
   located.room.finishedAt = Date.now();
   touch(located.room);
@@ -349,8 +358,11 @@ export function restartMatch(code: string, playerId: string): Success<{ room: Pu
   if (!located.ok) return located;
   if (located.seat.id !== located.room.hostId) return fail("Only the host can start a rematch.");
   if (located.room.phase !== "finished") return fail("Finish this match before starting another.");
-  if (located.room.players.size !== 2) return fail("Battleship needs two players.");
-  located.room.game = battleshipEngine.createGame([...located.room.players.keys()]);
+  const again = seatLimit(located.room.gameId);
+  if (located.room.players.size < again.min || located.room.players.size > again.max) {
+    return fail(countMessage(again));
+  }
+  located.room.game = createMatch(located.room.gameId, [...located.room.players.keys()]);
   located.room.phase = "playing";
   located.room.startedAt = Date.now();
   located.room.finishedAt = null;
@@ -439,19 +451,42 @@ function pruneBucket(bucket: Map<string, number[]>, now: number): void {
   }
 }
 
+export function chooseGame(
+  code: string,
+  playerId: string,
+  gameId: PlayableGameId,
+): Success<{ room: PublicRoom }> | Failure {
+  const located = locate(code, playerId);
+  if (!located.ok) return located;
+  if (located.seat.id !== located.room.hostId) return fail("Only the host can choose the game.");
+  if (located.room.phase !== "lobby") return fail("The match has already started.");
+  const rule = seatLimit(gameId);
+  if (located.room.players.size > rule.max) return fail(`${rule.name} seats at most ${rule.max}.`);
+  located.room.gameId = gameId;
+  touch(located.room);
+  return { ok: true, room: toPublic(located.room) };
+}
+
+function seatLimit(gameId: PlayableGameId): { min: number; max: number; name: string } {
+  const game = GAMES.find((entry) => entry.id === gameId);
+  return { min: game?.minPlayers ?? 2, max: game?.maxPlayers ?? 2, name: game?.name ?? "This game" };
+}
+
+function countMessage(rule: { min: number; max: number; name: string }): string {
+  if (rule.min === rule.max) return `${rule.name} needs ${rule.min} players.`;
+  return `${rule.name} needs ${rule.min} to ${rule.max} players.`;
+}
+
 function viewsFor(room: Room): PlayerView[] {
   if (!room.game) return [];
   const game = room.game;
+  const ids = seatedIds(game);
   return [...room.players.values()]
-    .filter((seat) => game.playerIds.includes(seat.id))
+    .filter((seat) => ids.includes(seat.id))
     .map((seat) => ({
       playerId: seat.id,
       socketId: seat.socketId,
-      update: {
-        version: room.version,
-        gameId: "battleship" as const,
-        view: battleshipEngine.getPlayerView(game, seat.id),
-      },
+      update: { ...viewUpdate(game, seat.id), version: room.version },
     }));
 }
 

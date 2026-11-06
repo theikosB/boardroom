@@ -55,7 +55,7 @@ export interface BattleshipView {
   notice: string | null;
 }
 
-export interface GameUpdate {
+export interface BattleshipUpdate {
   version: number;
   gameId: "battleship";
   view: BattleshipView;
@@ -73,7 +73,7 @@ export interface PublicPlayer {
 export interface PublicRoom {
   code: string;
   phase: "lobby" | "playing" | "finished";
-  gameId: "battleship" | null;
+  gameId: "battleship" | "uno" | null;
   hostId: string;
   players: PublicPlayer[];
   version: number;

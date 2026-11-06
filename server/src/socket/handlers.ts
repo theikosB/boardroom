@@ -13,6 +13,7 @@ import {
   allowAttempt,
   allowEvent,
   claimSocket,
+  chooseGame,
   createRoom,
   disconnectSocket,
   endMatch,
@@ -233,12 +234,21 @@ export function attachSockets(io: Server): void {
     socket.on("room:configure", (payload: unknown, ack?: unknown) => {
       const reply = ackOf(ack);
       if (!paced(socket, reply)) return;
+      const seat = seated(socket);
       const parsed = configureSchema.safeParse(payload);
-      if (!seated(socket) || !parsed.success) {
-        reply({ ok: false, message: "Battleship is the game at this table." });
+      if (!seat || !parsed.success) {
+        reply({ ok: false, message: "Pick Battleship or UNO." });
         return;
       }
-      reply({ ok: true });
+      void enqueue(seat.code, () => {
+        const result = chooseGame(seat.code, seat.playerId, parsed.data.gameId);
+        if (!result.ok) {
+          reply(result);
+          return;
+        }
+        broadcastRoom(io, seat.code);
+        reply({ ok: true });
+      });
     });
 
     socket.on("room:start", (_payload: unknown, ack?: unknown) => {

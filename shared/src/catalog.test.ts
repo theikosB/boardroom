@@ -26,10 +26,10 @@ describe("game catalog", () => {
 
   it("marks a game playable only when it is listed as implemented", () => {
     for (const game of GAMES) {
-      const implemented = PLAYABLE_GAME_IDS.includes(game.id);
+      const implemented = (PLAYABLE_GAME_IDS as readonly string[]).includes(game.id);
       expect(game.availability === "playable").toBe(implemented);
     }
-    expect([...PLAYABLE_GAME_IDS]).toEqual(["battleship"]);
+    expect([...PLAYABLE_GAME_IDS]).toEqual(["battleship", "uno"]);
   });
 
   it("gives every game a description and a legal player range", () => {

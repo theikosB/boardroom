@@ -11,6 +11,7 @@ export type {
   GameCatalogEntry,
   GameDifficulty,
   GameId,
+  PlayableGameId,
 } from "./catalog.ts";
 export type {
   GameEngine,
@@ -29,7 +30,7 @@ export type {
   CellMark,
   Coord,
   FleetPlacement,
-  GameUpdate,
+  BattleshipUpdate,
   PublicPlayer,
   PublicRoom,
   SeatSession,
@@ -38,6 +39,9 @@ export type {
   VisibleShip,
   ClientAck,
 } from "./games/battleship.ts";
+export type { UnoCard, UnoColor, UnoMove, UnoOpponent, UnoRank, UnoView } from "./games/uno.ts";
+export { UNO_COLORS, UNO_RANKS } from "./games/uno.ts";
+export type { GameUpdate } from "./protocol.ts";
 export {
   battleshipMoveSchema,
   configureSchema,
@@ -49,4 +53,5 @@ export {
   readySchema,
   rejoinRoomSchema,
   roomCodeSchema,
+  unoMoveSchema,
 } from "./schemas.ts";

@@ -12,8 +12,8 @@ import { GameTable } from "@/features/games/registry";
 import { clearSession, loadSession, saveSession } from "@/lib/session";
 import { request, socket } from "@/lib/socket";
 import {
+  GAMES,
   ROOM_CODE_ALPHABET,
-  type BattleshipMove,
   type GameUpdate,
   type PublicRoom,
 } from "@boardroom/shared";
@@ -157,8 +157,13 @@ function RoomSession({ code }: { code: string }) {
   }
 
   const you = room?.players.find((player) => player.id === youId) ?? null;
-  const view = game?.view ?? null;
-  const winnerName = room?.players.find((player) => player.id === view?.winnerId)?.name ?? null;
+  const table = game && room && game.gameId === room.gameId ? game : null;
+  const winnerName = room?.players.find((player) => player.id === table?.view.winnerId)?.name ?? null;
+  const chosen = GAMES.find((entry) => entry.id === room?.gameId);
+  const playerCount = room?.players.length ?? 0;
+  const canStart = Boolean(
+    chosen && playerCount >= chosen.minPlayers && playerCount <= chosen.maxPlayers,
+  );
   const someoneAway = room?.phase === "lobby" && room.players.some((player) => !player.ready);
 
   return (
@@ -250,33 +255,57 @@ function RoomSession({ code }: { code: string }) {
           </ul>
 
           {room.phase === "lobby" ? (
-            <div className="mt-5 flex flex-col gap-3 sm:flex-row">
-              <Button
-                type="button"
-                variant="outline"
-                className="h-11 text-base"
-                data-testid="ready-toggle"
-                disabled={pending}
-                onClick={() => void act("room:ready", { ready: !you.ready })}
-              >
-                {you.ready ? "Not ready yet" : "I'm ready"}
-              </Button>
-              {you.isHost ? (
+            <div className="mt-5 grid gap-4">
+              <div>
+                <p className="text-base text-muted-foreground">Game</p>
+                {you.isHost ? (
+                  <div className="mt-2 flex flex-wrap gap-2">
+                    {GAMES.filter((entry) => entry.availability === "playable").map((entry) => (
+                      <Button
+                        key={entry.id}
+                        type="button"
+                        variant={room.gameId === entry.id ? "default" : "outline"}
+                        className="h-11 px-4 text-base"
+                        data-testid={`pick-${entry.id}`}
+                        disabled={pending}
+                        onClick={() => void act("room:configure", { gameId: entry.id })}
+                      >
+                        {entry.name}
+                      </Button>
+                    ))}
+                  </div>
+                ) : (
+                  <p className="mt-1 text-2xl">{chosen?.name}</p>
+                )}
+              </div>
+              <div className="flex flex-col gap-3 sm:flex-row">
                 <Button
                   type="button"
+                  variant="outline"
                   className="h-11 text-base"
-                  data-testid="start-game"
-                  disabled={pending || room.players.length < 2}
-                  onClick={() => {
-                    if (someoneAway) setConfirmStart(true);
-                    else void act("room:start");
-                  }}
+                  data-testid="ready-toggle"
+                  disabled={pending}
+                  onClick={() => void act("room:ready", { ready: !you.ready })}
                 >
-                  {room.players.length < 2 ? "Waiting for a second player" : "Start Battleship"}
+                  {you.ready ? "Not ready yet" : "I'm ready"}
                 </Button>
-              ) : (
-                <p className="self-center text-base text-muted-foreground">The host starts Battleship.</p>
-              )}
+                {you.isHost ? (
+                  <Button
+                    type="button"
+                    className="h-11 text-base"
+                    data-testid="start-game"
+                    disabled={pending || !canStart}
+                    onClick={() => {
+                      if (someoneAway) setConfirmStart(true);
+                      else void act("room:start");
+                    }}
+                  >
+                    {canStart ? `Start ${chosen?.name}` : playerCount < (chosen?.minPlayers ?? 2) ? "Waiting for another player" : `Too many players for ${chosen?.name}`}
+                  </Button>
+                ) : (
+                  <p className="self-center text-base text-muted-foreground">The host starts {chosen?.name}.</p>
+                )}
+              </div>
             </div>
           ) : null}
 
@@ -320,17 +349,17 @@ function RoomSession({ code }: { code: string }) {
         </p>
       ) : null}
 
-      {room && you && room.phase !== "lobby" && view ? (
+      {room && you && room.phase !== "lobby" && table ? (
         <GameTable
-          gameId={room.gameId}
-          view={view}
+          update={table}
           pending={pending}
           winnerName={winnerName}
-          onMove={(move: BattleshipMove) => void act("game:move", move)}
+          names={Object.fromEntries(room.players.map((player) => [player.id, player.name]))}
+          onMove={(move) => void act("game:move", move)}
         />
       ) : null}
 
-      {room && you && room.phase !== "lobby" && !view ? (
+      {room && you && room.phase !== "lobby" && !table ? (
         <p className="text-lg text-muted-foreground">Setting the table…</p>
       ) : null}
 
@@ -339,7 +368,7 @@ function RoomSession({ code }: { code: string }) {
           <DialogHeader>
             <DialogTitle className="font-heading text-2xl">Start with someone not ready?</DialogTitle>
             <DialogDescription className="text-base text-muted-foreground">
-              Ready is a signal. You can still start Battleship.
+              Ready is a signal. You can still start the game.
             </DialogDescription>
           </DialogHeader>
           <DialogFooter>

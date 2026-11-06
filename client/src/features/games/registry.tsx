@@ -1,17 +1,33 @@
 import { BattleshipTable } from "@/features/games/battleship/BattleshipTable";
-import type { BattleshipMove, BattleshipView, GameId } from "@boardroom/shared";
+import { UnoTable } from "@/features/games/uno/UnoTable";
+import type { BattleshipMove, GameUpdate, UnoMove } from "@boardroom/shared";
 
 interface GameTableProps {
-  gameId: GameId | null;
-  view: BattleshipView;
+  update: GameUpdate;
   pending: boolean;
   winnerName: string | null;
-  onMove: (move: BattleshipMove) => void;
+  names: Record<string, string>;
+  onMove: (move: BattleshipMove | UnoMove) => void;
 }
 
-export function GameTable({ gameId, view, pending, winnerName, onMove }: GameTableProps) {
-  if (gameId === "battleship") {
-    return <BattleshipTable view={view} pending={pending} winnerName={winnerName} onMove={onMove} />;
+export function GameTable({ update, pending, winnerName, names, onMove }: GameTableProps) {
+  if (update.gameId === "uno") {
+    return (
+      <UnoTable
+        view={update.view}
+        pending={pending}
+        winnerName={winnerName}
+        names={names}
+        onMove={onMove}
+      />
+    );
   }
-  return <p className="text-base text-muted-foreground">This game is not open yet.</p>;
+  return (
+    <BattleshipTable
+      view={update.view}
+      pending={pending}
+      winnerName={winnerName}
+      onMove={onMove}
+    />
+  );
 }

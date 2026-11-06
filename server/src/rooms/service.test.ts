@@ -8,6 +8,7 @@ import {
   allowAttempt,
   allowEvent,
   claimSocket,
+  chooseGame,
   createRoom,
   disconnectSocket,
   enqueue,
@@ -126,12 +127,38 @@ describe("rooms", () => {
     const views = snapshot(created.session.code)?.views ?? [];
     const ada = views.find((view) => view.playerId === created.session.playerId);
     const raw = JSON.stringify(ada?.update.view);
-    expect(ada?.update.view.opponentFleet).toBeNull();
+    expect(ada?.update.gameId).toBe("battleship");
+    if (ada?.update.gameId === "battleship") expect(ada.update.view.opponentFleet).toBeNull();
     expect(raw).not.toContain('"c":6');
     expect(raw).not.toContain('"c":9');
     expect(raw).not.toContain(created.session.token);
     const repeat = playMove(created.session.code, created.session.playerId, { type: "fire", r: 1, c: 5 });
     expect(repeat.ok).toBe(false);
+  });
+
+  it("lets a third player sit for UNO and hides the other hand", () => {
+    resetRooms();
+    const created = createRoom("Ada", "sock-uno-ada");
+    if (!created.ok) throw new Error(created.message);
+    const chosen = chooseGame(created.session.code, created.session.playerId, "uno");
+    expect(chosen.ok).toBe(true);
+    const joined = joinRoom(created.session.code, "Bea", "sock-uno-bea");
+    if (!joined.ok) throw new Error(joined.message);
+    const third = joinRoom(created.session.code, "Cam", "sock-uno-cam");
+    expect(third.ok).toBe(true);
+    const started = startMatch(created.session.code, created.session.playerId);
+    expect(started.ok).toBe(true);
+    const views = snapshot(created.session.code)?.views ?? [];
+    const ada = views.find((view) => view.playerId === created.session.playerId);
+    const bea = views.find((view) => view.playerId === joined.session.playerId);
+    expect(ada?.update.gameId).toBe("uno");
+    if (ada?.update.gameId !== "uno" || bea?.update.gameId !== "uno") throw new Error("expected UNO");
+    expect(ada.update.view.yourHand).toHaveLength(7);
+    const raw = JSON.stringify(ada.update.view);
+    for (const card of bea.update.view.yourHand) {
+      expect(raw).not.toContain(`"id":"${card.id}"`);
+    }
+    expect(raw).not.toContain(created.session.token);
   });
 
   it("limits how fast a client can ask for a seat", () => {
