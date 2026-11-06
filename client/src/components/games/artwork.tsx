@@ -28,6 +28,8 @@ function renderArt(id: GameId) {
       return <BirdArt />;
     case "splendor":
       return <GemArt />;
+    case "scotland-yard":
+      return <YardArt />;
   }
 }
 
@@ -238,6 +240,43 @@ function BirdArt() {
       <circle cx="206" cy="82" r="22" fill="var(--on-felt)" />
       <polygon points="224,78 252,86 224,94" fill="var(--brass)" />
       <circle cx="214" cy="78" r="2.5" fill="var(--felt)" />
+    </>
+  );
+}
+
+function YardArt() {
+  const stops = [
+    [78, 118],
+    [132, 74],
+    [196, 96],
+    [248, 58],
+  ];
+
+  return (
+    <>
+      <TableBackground />
+      <path
+        d="M52 142 C 96 48, 150 150, 286 46"
+        fill="none"
+        stroke="var(--brass)"
+        strokeWidth="5"
+        strokeLinecap="round"
+      />
+      <path
+        d="M46 62 C 120 78, 176 36, 274 124"
+        fill="none"
+        stroke="var(--foam)"
+        strokeWidth="5"
+        strokeLinecap="round"
+      />
+      <path d="M64 150 L 252 40" fill="none" stroke="var(--on-felt)" strokeWidth="5" strokeLinecap="round" />
+      {stops.map(([x, y]) => (
+        <circle key={`${x}-${y}`} cx={x} cy={y} r="8" fill="var(--on-felt)" />
+      ))}
+      <circle cx="176" cy="124" r="16" fill="var(--felt)" stroke="var(--brass)" strokeWidth="3" />
+      <text x="176" y="130" textAnchor="middle" fill="var(--brass)" fontSize="18" fontWeight="700">
+        ?
+      </text>
     </>
   );
 }

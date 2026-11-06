@@ -16,10 +16,11 @@ const SHELF = [
   "ticket-to-ride",
   "wingspan",
   "splendor",
+  "scotland-yard",
 ] as const;
 
 describe("game catalog", () => {
-  it("lists the nine games in shelf order", () => {
+  it("lists the ten games in shelf order", () => {
     expect(GAMES.map((game) => game.id)).toEqual([...SHELF]);
     expect(new Set(SHELF).size).toBe(SHELF.length);
   });

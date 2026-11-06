@@ -1,6 +1,6 @@
 # Boardroom
 
-Boardroom is a private browser table for a small group of friends. Someone opens a room, shares a five-character code, and one friend sits down from their own screen. The server is the referee. Battleship and UNO are the games you can play. The other seven games are on the shelf and are not playable yet.
+Boardroom is a private browser table for a small group of friends. Someone opens a room, shares a five-character code, and one friend sits down from their own screen. The server is the referee. Battleship and UNO are the games you can play. The other eight games are on the shelf and are not playable yet.
 
 There is no account system and no database. Rooms live in the memory of one Node process.
 
@@ -55,7 +55,7 @@ docs/       How to add a game
 
 Battleship and UNO are playable. These stay coming soon:
 
-Poker (Texas Hold'em), Monopoly, Risk, Catan, Ticket to Ride, Wingspan, and Splendor.
+Poker (Texas Hold'em), Monopoly, Risk, Catan, Ticket to Ride, Wingspan, Splendor, and Scotland Yard.
 
 To add a game, follow [docs/adding-a-game.md](docs/adding-a-game.md). Artwork on the shelf is original.
 

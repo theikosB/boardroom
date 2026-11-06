@@ -8,6 +8,7 @@ export const GAME_IDS = [
   "ticket-to-ride",
   "wingspan",
   "splendor",
+  "scotland-yard",
 ] as const;
 
 export type GameId = (typeof GAME_IDS)[number];
@@ -127,6 +128,16 @@ export const GAMES: readonly GameCatalogEntry[] = [
       "Collect gems, buy cards, and race to fifteen points. Turns stay short and the table stays small.",
     minPlayers: 2,
     maxPlayers: 4,
+    difficulty: "medium",
+    availability: "coming-soon",
+  },
+  {
+    id: "scotland-yard",
+    name: "Scotland Yard",
+    description:
+      "One player slips through a city on buses, trains, and taxis. Everyone else follows the last known stop and tries to land on the same one.",
+    minPlayers: 2,
+    maxPlayers: 6,
     difficulty: "medium",
     availability: "coming-soon",
   },
