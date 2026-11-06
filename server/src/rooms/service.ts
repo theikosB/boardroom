@@ -12,6 +12,9 @@ import { battleshipEngine } from "../games/registry.ts";
 
 export const RECONNECT_GRACE_MS = 2 * 60 * 1000;
 export const EMPTY_LOBBY_MS = 30 * 60 * 1000;
+export const MATCH_MAX_MS = 2 * 60 * 60 * 1000;
+export const MAX_ROOMS = 100;
+export const MAX_SOCKETS = 200;
 
 const JOIN_WINDOW_MS = 60 * 1000;
 const JOIN_LIMIT = 20;
@@ -37,6 +40,9 @@ interface Room {
   game: BattleshipState | null;
   version: number;
   emptySince: number | null;
+  openedAt: number;
+  startedAt: number | null;
+  finishedAt: number | null;
 }
 
 export interface RoomSnapshot {
@@ -82,14 +88,27 @@ export function enqueue<T>(code: string, work: () => T | Promise<T>): Promise<T>
     () => work(),
     () => work(),
   );
-  queues.set(
-    code,
-    run.then(
-      () => undefined,
-      () => undefined,
-    ),
+  const tail = run.then(
+    () => undefined,
+    () => undefined,
   );
+  queues.set(code, tail);
+  void tail.then(() => {
+    if (queues.get(code) === tail) queues.delete(code);
+  });
   return run;
+}
+
+export function queueDepth(): number {
+  return queues.size;
+}
+
+export function hasRoom(code: string): boolean {
+  return rooms.has(code.trim().toUpperCase());
+}
+
+export function withinSocketCap(openSockets: number): boolean {
+  return openSockets <= MAX_SOCKETS;
 }
 
 export function allowAttempt(key: string, now = Date.now()): boolean {
@@ -103,7 +122,8 @@ export function allowAttempt(key: string, now = Date.now()): boolean {
   return true;
 }
 
-export function createRoom(name: string, socketId: string): Success<SeatGranted> {
+export function createRoom(name: string, socketId: string, now = Date.now()): Success<SeatGranted> | Failure {
+  if (rooms.size >= MAX_ROOMS) return fail("The table is full. Try again in a little while.");
   const { seat, token } = makeSeat(name, socketId, new Set());
   const code = freshCode();
   const room: Room = {
@@ -115,6 +135,9 @@ export function createRoom(name: string, socketId: string): Success<SeatGranted>
     game: null,
     version: 1,
     emptySince: null,
+    openedAt: now,
+    startedAt: null,
+    finishedAt: null,
   };
   rooms.set(code, room);
   console.info(`room created ${code}`);
@@ -210,6 +233,8 @@ export function startMatch(code: string, playerId: string): Success<{ room: Publ
   if (located.room.players.size !== 2) return fail("Battleship needs two players.");
   located.room.game = battleshipEngine.createGame([...located.room.players.keys()]);
   located.room.phase = "playing";
+  located.room.startedAt = Date.now();
+  located.room.finishedAt = null;
   for (const seat of located.room.players.values()) seat.ready = false;
   touch(located.room);
   console.info(`room started ${located.room.code}`);
@@ -227,6 +252,7 @@ export function playMove(code: string, playerId: string, rawMove: unknown): Succ
   located.room.game = battleshipEngine.applyMove(located.room.game, playerId, parsed.data);
   if (battleshipEngine.getOutcome(located.room.game)) {
     located.room.phase = "finished";
+    located.room.finishedAt = Date.now();
     console.info(`room finished ${located.room.code}`);
   }
   touch(located.room);
@@ -241,6 +267,7 @@ export function leaveRoom(code: string, playerId: string): Success<LeaveGranted>
   if (room.phase === "playing" && room.game) {
     room.game = forfeit(room.game, playerId);
     room.phase = "finished";
+    room.finishedAt = Date.now();
     console.info(`forfeit ${room.code}`);
   }
   touch(room);
@@ -271,6 +298,7 @@ export function endMatch(code: string, playerId: string): Success<{ room: Public
   if (located.room.phase === "lobby" || !located.room.game) return fail("The match has not started.");
   located.room.game = endByHost(located.room.game);
   located.room.phase = "finished";
+  located.room.finishedAt = Date.now();
   touch(located.room);
   console.info(`room ended ${located.room.code}`);
   return { ok: true, room: toPublic(located.room) };
@@ -284,6 +312,8 @@ export function restartMatch(code: string, playerId: string): Success<{ room: Pu
   if (located.room.players.size !== 2) return fail("Battleship needs two players.");
   located.room.game = battleshipEngine.createGame([...located.room.players.keys()]);
   located.room.phase = "playing";
+  located.room.startedAt = Date.now();
+  located.room.finishedAt = null;
   for (const seat of located.room.players.values()) {
     seat.ready = false;
     seat.wantsRematch = false;
@@ -337,10 +367,16 @@ export function sweep(now = Date.now()): { closed: string[]; changed: string[] }
         (seat) =>
           !seat.connected && seat.disconnectedAt !== null && now - seat.disconnectedAt >= RECONNECT_GRACE_MS,
       );
+    const lobbyExpired = room.phase === "lobby" && now - room.openedAt >= EMPTY_LOBBY_MS;
     const lobbyIdle =
       room.phase === "lobby" && room.emptySince !== null && now - room.emptySince >= EMPTY_LOBBY_MS;
-    if (everyoneGone || lobbyIdle) {
+    const matchExpired =
+      room.phase === "playing" && room.startedAt !== null && now - room.startedAt >= MATCH_MAX_MS;
+    const finishedExpired =
+      room.phase === "finished" && room.finishedAt !== null && now - room.finishedAt >= EMPTY_LOBBY_MS;
+    if (everyoneGone || lobbyIdle || lobbyExpired || matchExpired || finishedExpired) {
       rooms.delete(room.code);
+      queues.delete(room.code);
       closed.push(room.code);
       console.info(`room expired ${room.code}`);
       continue;
@@ -349,6 +385,11 @@ export function sweep(now = Date.now()): { closed: string[]; changed: string[] }
       touch(room);
       changed.push(room.code);
     }
+  }
+  for (const [key, stamps] of attempts) {
+    const recent = stamps.filter((stamp) => now - stamp < JOIN_WINDOW_MS);
+    if (recent.length === 0) attempts.delete(key);
+    else if (recent.length !== stamps.length) attempts.set(key, recent);
   }
   return { closed, changed };
 }

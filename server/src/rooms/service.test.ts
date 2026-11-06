@@ -1,12 +1,16 @@
 import { describe, expect, it, vi } from "vitest";
 import {
+  EMPTY_LOBBY_MS,
+  MAX_ROOMS,
   RECONNECT_GRACE_MS,
   allowAttempt,
   createRoom,
   disconnectSocket,
+  enqueue,
   joinRoom,
   leaveRoom,
   playMove,
+  queueDepth,
   rejoinRoom,
   resetRooms,
   snapshot,
@@ -16,6 +20,7 @@ import {
 
 function seatTwo() {
   const created = createRoom("Ada", "sock-ada");
+  if (!created.ok) throw new Error(created.message);
   const joined = joinRoom(created.session.code, "Bea", "sock-bea");
   if (!joined.ok) throw new Error(joined.message);
   return { created, joined };
@@ -130,5 +135,33 @@ describe("rooms", () => {
     for (let count = 0; count < 20; count += 1) expect(allowAttempt("10.0.0.8", now)).toBe(true);
     expect(allowAttempt("10.0.0.8", now)).toBe(false);
     expect(allowAttempt("10.0.0.9", now)).toBe(true);
+  });
+
+  it("forgets a queue entry once the job finishes", async () => {
+    resetRooms();
+    await enqueue("not-a-room", () => undefined);
+    await new Promise((resolve) => setTimeout(resolve, 0));
+    expect(queueDepth()).toBe(0);
+  });
+
+  it("closes a lobby after half an hour even while the host is connected", () => {
+    resetRooms();
+    const created = createRoom("Ada", "sock-ada", 1_000);
+    if (!created.ok) throw new Error(created.message);
+    const early = sweep(1_000 + 60_000);
+    expect(early.closed).not.toContain(created.session.code);
+    const later = sweep(1_000 + EMPTY_LOBBY_MS + 1);
+    expect(later.closed).toContain(created.session.code);
+    expect(snapshot(created.session.code)).toBeNull();
+  });
+
+  it("stops opening rooms once the table is full", () => {
+    resetRooms();
+    for (let count = 0; count < MAX_ROOMS; count += 1) {
+      const created = createRoom(`Ada${count}`, `sock-${count}`);
+      expect(created.ok).toBe(true);
+    }
+    const extra = createRoom("Bea", "sock-extra");
+    expect(extra.ok).toBe(false);
   });
 });

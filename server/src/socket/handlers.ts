@@ -15,6 +15,7 @@ import {
   disconnectSocket,
   endMatch,
   enqueue,
+  hasRoom,
   joinRoom,
   kickPlayer,
   leaveRoom,
@@ -25,6 +26,7 @@ import {
   setReady,
   snapshot,
   startMatch,
+  withinSocketCap,
 } from "../rooms/service.ts";
 
 interface SeatBinding {
@@ -85,6 +87,10 @@ async function releaseOtherRoom(io: Server, socket: Socket, nextCode: string): P
 
 export function attachSockets(io: Server): void {
   io.on("connection", (socket) => {
+    if (!withinSocketCap(io.sockets.sockets.size)) {
+      socket.disconnect(true);
+      return;
+    }
     socket.on("room:create", (payload: unknown, ack?: unknown) => {
       const reply = ackOf(ack);
       if (!allowAttempt(addressOf(socket))) {
@@ -99,6 +105,10 @@ export function attachSockets(io: Server): void {
       void enqueue(`create:${socket.id}`, async () => {
         await releaseOtherRoom(io, socket, "");
         const created = createRoom(parsed.data.name, socket.id);
+        if (!created.ok) {
+          reply(created);
+          return;
+        }
         bind(socket, created.session.code, created.session.playerId);
         broadcastRoom(io, created.session.code);
         reply({ ok: true, session: created.session });
@@ -114,6 +124,10 @@ export function attachSockets(io: Server): void {
       const parsed = joinRoomSchema.safeParse(payload);
       if (!parsed.success) {
         reply({ ok: false, message: "Check the room code and use a name between 2 and 20 characters." });
+        return;
+      }
+      if (!hasRoom(parsed.data.code)) {
+        reply({ ok: false, message: "That room does not exist." });
         return;
       }
       void (async () => {
@@ -133,9 +147,17 @@ export function attachSockets(io: Server): void {
 
     socket.on("room:rejoin", (payload: unknown, ack?: unknown) => {
       const reply = ackOf(ack);
+      if (!allowAttempt(addressOf(socket))) {
+        reply({ ok: false, message: "Too many attempts. Wait a minute and try again." });
+        return;
+      }
       const parsed = rejoinRoomSchema.safeParse(payload);
       if (!parsed.success) {
         reply({ ok: false, message: "That code does not match a seat." });
+        return;
+      }
+      if (!hasRoom(parsed.data.code)) {
+        reply({ ok: false, message: "That room does not exist." });
         return;
       }
       void enqueue(parsed.data.code, () => {
