@@ -12,7 +12,7 @@ const STEPS = [
   {
     number: "3",
     title: "Pick a game",
-    body: "The host chooses from the shelf. Play starts when that game's rules are in the app. Right now every title is still coming soon.",
+    body: "This room plays Battleship. Both players hide a fleet, then take turns firing. The other games stay on the shelf until their rules are written.",
   },
 ];
 
@@ -20,9 +20,9 @@ export function HowItWorks() {
   return (
     <section id="how-it-works" className="scroll-mt-24">
       <div className="max-w-2xl">
-        <h2 className="text-3xl sm:text-4xl">How a night will work</h2>
+        <h2 className="text-3xl sm:text-4xl">How a night works</h2>
         <p className="mt-3 text-lg text-muted-foreground">
-          Three steps, once rooms are open. This page is the front door. The rooms come next.
+          Open a room, share the code, and play Battleship. The server is the referee.
         </p>
       </div>
       <ol className="mt-8 grid gap-4 md:grid-cols-3">

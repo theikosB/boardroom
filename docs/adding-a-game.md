@@ -1,6 +1,6 @@
 # Adding a game
 
-Boardroom is a shelf of games on top of one room system. A new game should plug in without changing how people create a room, reconnect, or take turns at the table. This guide is the whole path. Milestone 1 has the catalog and the engine contract. It does not have a server, a socket, or any game rules yet.
+Boardroom is a shelf of games on top of one room system. A new game should plug in without changing how people create a room, reconnect, or take turns at the table. This guide is the whole path. The server, the socket, and Battleship are in the repo. The other eight games are still catalog rows.
 
 ## Rules every game inherits
 
@@ -16,7 +16,7 @@ The match state will live in server memory. Closing the host's browser must not 
 
 A player id is a public label. It must never be enough to reclaim a seat.
 
-When rooms are built, the server generates the token with Node's CSPRNG and stores only a hash:
+The server generates the token with Node's CSPRNG and stores only a hash:
 
 ```ts
 import { createHash, randomBytes, timingSafeEqual } from "node:crypto";
@@ -39,7 +39,7 @@ export function reconnectTokenMatches(token: string, tokenHash: string): boolean
 }
 ```
 
-Put that module in `server/src/auth/reconnectToken.ts` with the room work. Do not put it in the client bundle, and do not log the raw token or the hash. The create and join replies return the raw token once. The browser keeps it in `localStorage`. Rejoin sends the room code, the player id, and the token together. The server hashes the presented token and compares it with `timingSafeEqual`. A mismatched token is rejected even when the player id is real.
+That module is `server/src/auth/reconnectToken.ts`. Do not put it in the client bundle, and do not log the raw token or the hash. The create and join replies return the raw token once. The browser keeps it in `localStorage`. Rejoin sends the room code, the player id, and the token together. The server hashes the presented token and compares it with `timingSafeEqual`. A mismatched token is rejected even when the player id is real.
 
 ### Hidden information
 
@@ -49,15 +49,16 @@ The client renders the view and submits an intended move. It does not apply the 
 
 ## Where the pieces go
 
-| Piece | Path | Status in this milestone |
+| Piece | Path | Status |
 | --- | --- | --- |
 | Shelf entry | `shared/src/catalog.ts` | Exists |
 | Engine contract | `shared/src/games/types.ts` | Exists |
-| Rules | `server/src/games/<id>/engine.ts` | Add with the first playable game |
+| Rules | `server/src/games/<id>/engine.ts` | Battleship is the example |
 | Rule tests | `server/src/games/<id>/engine.test.ts` | Same change as the engine |
-| Engine registration | `server/src/games/registry.ts` | Add when the server package exists |
-| Renderer | `client/src/features/games/<id>/` | Add with the first playable game |
-| Renderer registry | `client/src/features/games/registry.ts` | Maps a game id to its React component |
+| Room service | `server/src/rooms/service.ts` | Exists |
+| Engine registration | `server/src/games/registry.ts` | Battleship is registered |
+| Renderer | `client/src/features/games/<id>/` | Battleship is the example |
+| Renderer registry | `client/src/features/games/registry.tsx` | Maps a game id to its React component |
 
 The shared package holds types, the catalog, and later the socket payload schemas. It must not hold an engine. If the browser bundle imported the rules, a future bug could send the full state down with them.
 

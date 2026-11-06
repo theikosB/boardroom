@@ -2,6 +2,7 @@ import { GameLibrary } from "@/components/home/GameLibrary";
 import { Hero } from "@/components/home/Hero";
 import { HowItWorks } from "@/components/home/HowItWorks";
 import { InfoDialog } from "@/components/home/InfoDialog";
+import { RoomDialog } from "@/components/home/RoomDialog";
 import { type ShelfDialog } from "@/components/home/shelfDialog";
 import type { GameCatalogEntry } from "@boardroom/shared";
 import { useState } from "react";
@@ -10,6 +11,10 @@ export function HomePage() {
   const [dialog, setDialog] = useState<ShelfDialog | null>(null);
 
   function inspect(game: GameCatalogEntry) {
+    if (game.availability === "playable") {
+      setDialog({ kind: "room", intent: "create" });
+      return;
+    }
     setDialog({ kind: "game", game });
   }
 
@@ -23,12 +28,21 @@ export function HomePage() {
       </div>
       <HowItWorks />
       <GameLibrary onInspect={inspect} />
-      <InfoDialog
-        dialog={dialog}
-        onOpenChange={(open) => {
-          if (!open) setDialog(null);
-        }}
-      />
+      {dialog?.kind === "room" ? (
+        <RoomDialog
+          intent={dialog.intent}
+          onOpenChange={(open) => {
+            if (!open) setDialog(null);
+          }}
+        />
+      ) : (
+        <InfoDialog
+          dialog={dialog}
+          onOpenChange={(open) => {
+            if (!open) setDialog(null);
+          }}
+        />
+      )}
     </main>
   );
 }

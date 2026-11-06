@@ -31,10 +31,10 @@ export interface GameCatalogEntry {
 
 /**
  * Games whose rules, player view, renderer, and tests all exist.
- * Keep this empty until that work lands. The catalog test fails if a card
- * says "playable" without an id here, or the other way around.
+ * The catalog test fails if a card says "playable" without an id here,
+ * or the other way around.
  */
-export const PLAYABLE_GAME_IDS: readonly GameId[] = [];
+export const PLAYABLE_GAME_IDS: readonly GameId[] = ["battleship"];
 
 export const GAMES: readonly GameCatalogEntry[] = [
   {
@@ -45,7 +45,7 @@ export const GAMES: readonly GameCatalogEntry[] = [
     minPlayers: 2,
     maxPlayers: 2,
     difficulty: "easy",
-    availability: "coming-soon",
+    availability: "playable",
   },
   {
     id: "uno",

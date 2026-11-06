@@ -4,15 +4,20 @@
   "version": "0.0.0",
   "workspaces": [
     "client",
+    "server",
     "shared"
   ],
   "scripts": {
-    "dev": "npm run dev -w @boardroom/client",
-    "build": "npm run typecheck -w @boardroom/shared && npm run build -w @boardroom/client",
-    "typecheck": "npm run typecheck -w @boardroom/shared && npm run typecheck -w @boardroom/client",
-    "test": "npm run test -w @boardroom/shared",
+    "dev": "concurrently -n server,client -c blue,green \"npm run dev -w @boardroom/server\" \"npm run dev -w @boardroom/client\"",
+    "build": "npm run typecheck -w @boardroom/shared && npm run typecheck -w @boardroom/server && npm run build -w @boardroom/client",
+    "start": "npm run build && npm run start -w @boardroom/server",
+    "typecheck": "npm run typecheck -w @boardroom/shared && npm run typecheck -w @boardroom/server && npm run typecheck -w @boardroom/client",
+    "test": "npm run test -w @boardroom/shared && npm run test -w @boardroom/server",
     "lint": "npm run lint -w @boardroom/client",
     "preview": "npm run preview -w @boardroom/client"
+  },
+  "devDependencies": {
+    "concurrently": "^9.2.1"
   },
   "engines": {
     "node": ">=22"

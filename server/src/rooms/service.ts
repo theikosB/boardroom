@@ -1,0 +1,456 @@
+import { randomBytes } from "node:crypto";
+import {
+  ROOM_CODE_ALPHABET,
+  battleshipMoveSchema,
+  type GameUpdate,
+  type PublicRoom,
+  type SeatSession,
+} from "@boardroom/shared";
+import { createReconnectToken, reconnectTokenMatches } from "../auth/reconnectToken.ts";
+import { endByHost, forfeit, type BattleshipState } from "../games/battleship/engine.ts";
+import { battleshipEngine } from "../games/registry.ts";
+
+export const RECONNECT_GRACE_MS = 2 * 60 * 1000;
+export const EMPTY_LOBBY_MS = 30 * 60 * 1000;
+
+const JOIN_WINDOW_MS = 60 * 1000;
+const JOIN_LIMIT = 20;
+
+interface Seat {
+  id: string;
+  name: string;
+  tokenHash: string;
+  socketId: string | null;
+  connected: boolean;
+  ready: boolean;
+  wantsRematch: boolean;
+  disconnectedAt: number | null;
+  hostGraceHandled: boolean;
+}
+
+interface Room {
+  code: string;
+  hostId: string;
+  phase: "lobby" | "playing" | "finished";
+  gameId: "battleship";
+  players: Map<string, Seat>;
+  game: BattleshipState | null;
+  version: number;
+  emptySince: number | null;
+}
+
+export interface RoomSnapshot {
+  room: PublicRoom;
+  views: PlayerView[];
+}
+
+export interface PlayerView {
+  playerId: string;
+  socketId: string | null;
+  update: GameUpdate;
+}
+
+export interface SeatGranted {
+  room: PublicRoom;
+  session: SeatSession;
+  previousSocketId?: string | null;
+}
+
+export interface LeaveGranted {
+  closed: boolean;
+  room: PublicRoom | null;
+  departedSocketId: string | null;
+  departedUpdate: GameUpdate | null;
+}
+
+type Failure = { ok: false; message: string };
+type Success<T> = { ok: true } & T;
+
+const rooms = new Map<string, Room>();
+const queues = new Map<string, Promise<unknown>>();
+const attempts = new Map<string, number[]>();
+
+export function resetRooms(): void {
+  rooms.clear();
+  queues.clear();
+  attempts.clear();
+}
+
+export function enqueue<T>(code: string, work: () => T | Promise<T>): Promise<T> {
+  const previous = queues.get(code) ?? Promise.resolve();
+  const run = previous.then(
+    () => work(),
+    () => work(),
+  );
+  queues.set(
+    code,
+    run.then(
+      () => undefined,
+      () => undefined,
+    ),
+  );
+  return run;
+}
+
+export function allowAttempt(key: string, now = Date.now()): boolean {
+  const recent = (attempts.get(key) ?? []).filter((stamp) => now - stamp < JOIN_WINDOW_MS);
+  if (recent.length >= JOIN_LIMIT) {
+    attempts.set(key, recent);
+    return false;
+  }
+  recent.push(now);
+  attempts.set(key, recent);
+  return true;
+}
+
+export function createRoom(name: string, socketId: string): Success<SeatGranted> {
+  const { seat, token } = makeSeat(name, socketId, new Set());
+  const code = freshCode();
+  const room: Room = {
+    code,
+    hostId: seat.id,
+    phase: "lobby",
+    gameId: "battleship",
+    players: new Map([[seat.id, seat]]),
+    game: null,
+    version: 1,
+    emptySince: null,
+  };
+  rooms.set(code, room);
+  console.info(`room created ${code}`);
+  return { ok: true, room: toPublic(room), session: toSession(room, seat, token) };
+}
+
+export function joinRoom(code: string, name: string, socketId: string): Success<SeatGranted> | Failure {
+  const room = findRoom(code);
+  if (!room) return fail("That room does not exist.");
+  if (room.phase !== "lobby") return fail("This game has already started.");
+  if (room.players.size >= 2) return fail("This room is full.");
+  if ([...room.players.values()].some((seat) => seat.socketId === socketId)) {
+    return fail("You are already in this room.");
+  }
+  const { seat, token } = makeSeat(name, socketId, namesOf(room));
+  room.players.set(seat.id, seat);
+  room.emptySince = null;
+  touch(room);
+  console.info(`room joined ${room.code}`);
+  return { ok: true, room: toPublic(room), session: toSession(room, seat, token) };
+}
+
+export function rejoinRoom(
+  code: string,
+  playerId: string,
+  token: string,
+  socketId: string,
+): Success<SeatGranted> | Failure {
+  const room = findRoom(code);
+  if (!room) return fail("That room does not exist.");
+  const seat = room.players.get(playerId);
+  if (!seat || !reconnectTokenMatches(token, seat.tokenHash)) {
+    console.info(`rejoin rejected ${room.code}`);
+    return fail("That code does not match a seat.");
+  }
+  const previousSocketId = seat.socketId;
+  seat.socketId = socketId;
+  seat.connected = true;
+  seat.disconnectedAt = null;
+  seat.hostGraceHandled = false;
+  room.emptySince = null;
+  touch(room);
+  console.info(`room rejoin ${room.code}`);
+  return {
+    ok: true,
+    room: toPublic(room),
+    session: toSession(room, seat, token),
+    previousSocketId,
+  };
+}
+
+export function disconnectSocket(socketId: string, now = Date.now()): string | null {
+  for (const room of rooms.values()) {
+    const seat = [...room.players.values()].find((player) => player.socketId === socketId);
+    if (!seat) continue;
+    seat.socketId = null;
+    seat.connected = false;
+    seat.disconnectedAt = now;
+    if ([...room.players.values()].every((player) => !player.connected)) room.emptySince = now;
+    touch(room);
+    console.info(`disconnect ${room.code}`);
+    return room.code;
+  }
+  return null;
+}
+
+export function setReady(code: string, playerId: string, ready: boolean): Success<{ room: PublicRoom }> | Failure {
+  const located = locate(code, playerId);
+  if (!located.ok) return located;
+  if (located.room.phase !== "lobby") return fail("The match has already started.");
+  located.seat.ready = ready;
+  touch(located.room);
+  return { ok: true, room: toPublic(located.room) };
+}
+
+export function kickPlayer(code: string, playerId: string, targetId: string): Success<{ room: PublicRoom }> | Failure {
+  const located = locate(code, playerId);
+  if (!located.ok) return located;
+  if (located.seat.id !== located.room.hostId) return fail("Only the host can remove a player.");
+  if (located.room.phase !== "lobby") return fail("Players can only be removed from the lobby.");
+  if (targetId === playerId) return fail("You cannot remove yourself.");
+  if (!located.room.players.has(targetId)) return fail("That player is not in the room.");
+  located.room.players.delete(targetId);
+  touch(located.room);
+  return { ok: true, room: toPublic(located.room) };
+}
+
+export function startMatch(code: string, playerId: string): Success<{ room: PublicRoom }> | Failure {
+  const located = locate(code, playerId);
+  if (!located.ok) return located;
+  if (located.seat.id !== located.room.hostId) return fail("Only the host can start.");
+  if (located.room.phase !== "lobby") return fail("The match has already started.");
+  if (located.room.players.size !== 2) return fail("Battleship needs two players.");
+  located.room.game = battleshipEngine.createGame([...located.room.players.keys()]);
+  located.room.phase = "playing";
+  for (const seat of located.room.players.values()) seat.ready = false;
+  touch(located.room);
+  console.info(`room started ${located.room.code}`);
+  return { ok: true, room: toPublic(located.room) };
+}
+
+export function playMove(code: string, playerId: string, rawMove: unknown): Success<{ room: PublicRoom }> | Failure {
+  const located = locate(code, playerId);
+  if (!located.ok) return located;
+  if (located.room.phase !== "playing" || !located.room.game) return fail("The match has not started.");
+  const parsed = battleshipMoveSchema.safeParse(rawMove);
+  if (!parsed.success) return fail("That move is not valid.");
+  const check = battleshipEngine.validateMove(located.room.game, playerId, parsed.data);
+  if (!check.ok) return fail(check.reason);
+  located.room.game = battleshipEngine.applyMove(located.room.game, playerId, parsed.data);
+  if (battleshipEngine.getOutcome(located.room.game)) {
+    located.room.phase = "finished";
+    console.info(`room finished ${located.room.code}`);
+  }
+  touch(located.room);
+  return { ok: true, room: toPublic(located.room) };
+}
+
+export function leaveRoom(code: string, playerId: string): Success<LeaveGranted> | Failure {
+  const located = locate(code, playerId);
+  if (!located.ok) return located;
+  const { room, seat } = located;
+  let departedUpdate: GameUpdate | null = null;
+  if (room.phase === "playing" && room.game) {
+    room.game = forfeit(room.game, playerId);
+    room.phase = "finished";
+    console.info(`forfeit ${room.code}`);
+  }
+  touch(room);
+  if (room.game && room.game.playerIds.includes(playerId)) {
+    departedUpdate = {
+      version: room.version,
+      gameId: "battleship",
+      view: battleshipEngine.getPlayerView(room.game, playerId),
+    };
+  }
+  const departedSocketId = seat.socketId;
+  room.players.delete(playerId);
+  if (room.players.size === 0) {
+    rooms.delete(room.code);
+    console.info(`room closed ${room.code}`);
+    return { ok: true, closed: true, room: null, departedSocketId, departedUpdate };
+  }
+  if (room.hostId === playerId) passHost(room);
+  touch(room);
+  if (departedUpdate) departedUpdate = { ...departedUpdate, version: room.version };
+  return { ok: true, closed: false, room: toPublic(room), departedSocketId, departedUpdate };
+}
+
+export function endMatch(code: string, playerId: string): Success<{ room: PublicRoom }> | Failure {
+  const located = locate(code, playerId);
+  if (!located.ok) return located;
+  if (located.seat.id !== located.room.hostId) return fail("Only the host can end the match.");
+  if (located.room.phase === "lobby" || !located.room.game) return fail("The match has not started.");
+  located.room.game = endByHost(located.room.game);
+  located.room.phase = "finished";
+  touch(located.room);
+  console.info(`room ended ${located.room.code}`);
+  return { ok: true, room: toPublic(located.room) };
+}
+
+export function restartMatch(code: string, playerId: string): Success<{ room: PublicRoom }> | Failure {
+  const located = locate(code, playerId);
+  if (!located.ok) return located;
+  if (located.seat.id !== located.room.hostId) return fail("Only the host can start a rematch.");
+  if (located.room.phase !== "finished") return fail("Finish this match before starting another.");
+  if (located.room.players.size !== 2) return fail("Battleship needs two players.");
+  located.room.game = battleshipEngine.createGame([...located.room.players.keys()]);
+  located.room.phase = "playing";
+  for (const seat of located.room.players.values()) {
+    seat.ready = false;
+    seat.wantsRematch = false;
+  }
+  touch(located.room);
+  console.info(`room rematch ${located.room.code}`);
+  return { ok: true, room: toPublic(located.room) };
+}
+
+export function nudgeRematch(code: string, playerId: string): Success<{ room: PublicRoom }> | Failure {
+  const located = locate(code, playerId);
+  if (!located.ok) return located;
+  if (located.seat.id === located.room.hostId) return fail("You can start the rematch yourself.");
+  if (located.room.phase !== "finished") return fail("The match is still going.");
+  located.seat.wantsRematch = true;
+  touch(located.room);
+  return { ok: true, room: toPublic(located.room) };
+}
+
+export function snapshot(code: string): RoomSnapshot | null {
+  const room = findRoom(code);
+  if (!room) return null;
+  return { room: toPublic(room), views: viewsFor(room) };
+}
+
+export function sweep(now = Date.now()): { closed: string[]; changed: string[] } {
+  const closed: string[] = [];
+  const changed: string[] = [];
+  for (const room of [...rooms.values()]) {
+    let dirty = false;
+    for (const seat of [...room.players.values()]) {
+      if (seat.connected || seat.disconnectedAt === null) continue;
+      if (now - seat.disconnectedAt < RECONNECT_GRACE_MS) continue;
+      if (room.phase === "lobby") {
+        const wasHost = room.hostId === seat.id;
+        room.players.delete(seat.id);
+        if (wasHost) passHost(room);
+        dirty = true;
+        continue;
+      }
+      if (room.hostId === seat.id && !seat.hostGraceHandled) {
+        seat.hostGraceHandled = true;
+        passHost(room);
+        dirty = true;
+      }
+    }
+    const seats = [...room.players.values()];
+    const everyoneGone =
+      seats.length === 0 ||
+      seats.every(
+        (seat) =>
+          !seat.connected && seat.disconnectedAt !== null && now - seat.disconnectedAt >= RECONNECT_GRACE_MS,
+      );
+    const lobbyIdle =
+      room.phase === "lobby" && room.emptySince !== null && now - room.emptySince >= EMPTY_LOBBY_MS;
+    if (everyoneGone || lobbyIdle) {
+      rooms.delete(room.code);
+      closed.push(room.code);
+      console.info(`room expired ${room.code}`);
+      continue;
+    }
+    if (dirty) {
+      touch(room);
+      changed.push(room.code);
+    }
+  }
+  return { closed, changed };
+}
+
+function viewsFor(room: Room): PlayerView[] {
+  if (!room.game) return [];
+  const game = room.game;
+  return [...room.players.values()]
+    .filter((seat) => game.playerIds.includes(seat.id))
+    .map((seat) => ({
+      playerId: seat.id,
+      socketId: seat.socketId,
+      update: {
+        version: room.version,
+        gameId: "battleship" as const,
+        view: battleshipEngine.getPlayerView(game, seat.id),
+      },
+    }));
+}
+
+function locate(code: string, playerId: string): { ok: true; room: Room; seat: Seat } | Failure {
+  const room = findRoom(code);
+  if (!room) return fail("That room does not exist.");
+  const seat = room.players.get(playerId);
+  if (!seat) return fail("You are not seated in this room.");
+  return { ok: true, room, seat };
+}
+
+function findRoom(code: string): Room | undefined {
+  return rooms.get(code.trim().toUpperCase());
+}
+
+function makeSeat(name: string, socketId: string, taken: Set<string>): { seat: Seat; token: string } {
+  const issued = createReconnectToken();
+  const seat: Seat = {
+    id: `p_${randomBytes(12).toString("base64url")}`,
+    name: uniqueName(name.trim(), taken),
+    tokenHash: issued.tokenHash,
+    socketId,
+    connected: true,
+    ready: false,
+    wantsRematch: false,
+    disconnectedAt: null,
+    hostGraceHandled: false,
+  };
+  return { seat, token: issued.token };
+}
+
+function uniqueName(name: string, taken: Set<string>): string {
+  if (!taken.has(name)) return name;
+  for (let count = 2; count < 50; count += 1) {
+    const suffix = ` ${count}`;
+    const candidate = `${name.slice(0, 20 - suffix.length)}${suffix}`;
+    if (!taken.has(candidate)) return candidate;
+  }
+  return name;
+}
+
+function namesOf(room: Room): Set<string> {
+  return new Set([...room.players.values()].map((seat) => seat.name));
+}
+
+function freshCode(): string {
+  for (let attempt = 0; attempt < 20; attempt += 1) {
+    const bytes = randomBytes(5);
+    const code = [...bytes].map((byte) => ROOM_CODE_ALPHABET[byte % ROOM_CODE_ALPHABET.length]).join("");
+    if (!rooms.has(code)) return code;
+  }
+  throw new Error("Could not allocate a room code.");
+}
+
+function passHost(room: Room): void {
+  const next = [...room.players.values()].find((seat) => seat.connected) ?? [...room.players.values()][0];
+  if (next) room.hostId = next.id;
+}
+
+function toPublic(room: Room): PublicRoom {
+  return {
+    code: room.code,
+    phase: room.phase,
+    gameId: room.gameId,
+    hostId: room.hostId,
+    version: room.version,
+    players: [...room.players.values()].map((seat) => ({
+      id: seat.id,
+      name: seat.name,
+      connected: seat.connected,
+      ready: seat.ready,
+      isHost: seat.id === room.hostId,
+      wantsRematch: seat.wantsRematch,
+    })),
+  };
+}
+
+function toSession(room: Room, seat: Seat, token: string): SeatSession {
+  return { code: room.code, playerId: seat.id, token, name: seat.name };
+}
+
+function touch(room: Room): void {
+  room.version += 1;
+}
+
+function fail(message: string): Failure {
+  return { ok: false, message };
+}

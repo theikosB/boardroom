@@ -13,12 +13,12 @@ export function EmptyTable() {
             <div className="h-16 w-11 rotate-6 rounded-md bg-brass" />
           </div>
           <p className="absolute right-0 bottom-3 left-0 text-center text-sm text-on-felt/85">
-            No room yet
+            Battleship
           </p>
         </div>
       </div>
       <figcaption className="mt-3 text-center text-sm leading-relaxed text-muted-foreground">
-        A preview of the table. Nobody is seated, because rooms are not open yet.
+        Two seats and a private code. Battleship is the game on the table.
       </figcaption>
     </figure>
   );

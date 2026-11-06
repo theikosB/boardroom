@@ -24,7 +24,8 @@ export interface GameOutcome {
  * `getOutcome` is how the server names a winner. The client displays that
  * result and does not compute its own.
  *
- * No game implements this yet. See docs/adding-a-game.md.
+ * Battleship is the first implementation. It lives in the server package.
+ * See docs/adding-a-game.md.
  */
 export interface GameEngine<TState, TMove, TView> {
   readonly id: GameId;

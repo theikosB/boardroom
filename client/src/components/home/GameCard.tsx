@@ -13,7 +13,7 @@ interface GameCardProps {
 
 export function GameCard({ game, onInspect }: GameCardProps) {
   const availability = game.availability === "playable" ? "Playable" : "Coming soon";
-  const actionLabel = game.availability === "playable" ? "Select game" : "Coming soon";
+  const actionLabel = game.availability === "playable" ? `Play ${game.name}` : "Coming soon";
 
   return (
     <article className="flex h-full flex-col overflow-hidden rounded-2xl border bg-card">

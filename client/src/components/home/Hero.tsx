@@ -16,8 +16,8 @@ export function Hero({ onCreate, onJoin }: HeroProps) {
         </h1>
         <p className="mt-5 max-w-xl text-lg leading-relaxed text-muted-foreground">
           Boardroom is a private place to play board games together. Someone opens a room,
-          shares a short code, and everyone else sits down from their own screen. The shelf
-          below is what we plan to play. Battleship is the first game we will actually build.
+          shares a short code, and everyone else sits down from their own screen. Battleship
+          is ready for two players. The rest of the shelf is still being built.
         </p>
         <div className="mt-8 flex flex-col gap-3 sm:flex-row">
           <Button type="button" className="h-12 px-5 text-base" onClick={onCreate}>
@@ -33,7 +33,8 @@ export function Hero({ onCreate, onJoin }: HeroProps) {
           </Button>
         </div>
         <p className="mt-4 max-w-xl text-base text-muted-foreground">
-          Live rooms are not open in this version. These buttons show how joining will work.
+          Both players use the same Boardroom server. A refresh keeps your seat. Closing the
+          host's browser does not end the match.
         </p>
       </div>
       <EmptyTable />
