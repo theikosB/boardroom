@@ -10,6 +10,12 @@ import { attachSockets, broadcastRoom } from "./socket/handlers.ts";
 const port = Number(process.env.PORT ?? 4010);
 const app = express();
 
+app.use((_request, response, next) => {
+  response.setHeader("X-Frame-Options", "DENY");
+  response.setHeader("Content-Security-Policy", "frame-ancestors 'none'");
+  next();
+});
+
 app.get("/health", (_request, response) => {
   response.json({ ok: true });
 });

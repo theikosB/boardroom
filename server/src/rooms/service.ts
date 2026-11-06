@@ -14,10 +14,13 @@ export const RECONNECT_GRACE_MS = 2 * 60 * 1000;
 export const EMPTY_LOBBY_MS = 30 * 60 * 1000;
 export const MATCH_MAX_MS = 2 * 60 * 60 * 1000;
 export const MAX_ROOMS = 100;
+export const MAX_ROOMS_PER_ADDRESS = 2;
 export const MAX_SOCKETS = 200;
+export const MAX_SOCKETS_PER_ADDRESS = 8;
 
 const JOIN_WINDOW_MS = 60 * 1000;
 const JOIN_LIMIT = 20;
+const EVENT_LIMIT = 120;
 
 interface Seat {
   id: string;
@@ -43,6 +46,7 @@ interface Room {
   openedAt: number;
   startedAt: number | null;
   finishedAt: number | null;
+  creatorAddress: string;
 }
 
 export interface RoomSnapshot {
@@ -75,11 +79,15 @@ type Success<T> = { ok: true } & T;
 const rooms = new Map<string, Room>();
 const queues = new Map<string, Promise<unknown>>();
 const attempts = new Map<string, number[]>();
+const events = new Map<string, number[]>();
+const socketsByAddress = new Map<string, number>();
 
 export function resetRooms(): void {
   rooms.clear();
   queues.clear();
   attempts.clear();
+  events.clear();
+  socketsByAddress.clear();
 }
 
 export function enqueue<T>(code: string, work: () => T | Promise<T>): Promise<T> {
@@ -112,18 +120,49 @@ export function withinSocketCap(openSockets: number): boolean {
 }
 
 export function allowAttempt(key: string, now = Date.now()): boolean {
-  const recent = (attempts.get(key) ?? []).filter((stamp) => now - stamp < JOIN_WINDOW_MS);
-  if (recent.length >= JOIN_LIMIT) {
-    attempts.set(key, recent);
-    return false;
-  }
-  recent.push(now);
-  attempts.set(key, recent);
+  return takeSlot(attempts, key, JOIN_LIMIT, now);
+}
+
+export function allowEvent(key: string, now = Date.now()): boolean {
+  return takeSlot(events, key, EVENT_LIMIT, now);
+}
+
+export function claimSocket(address: string): boolean {
+  const current = socketsByAddress.get(address) ?? 0;
+  if (current >= MAX_SOCKETS_PER_ADDRESS) return false;
+  socketsByAddress.set(address, current + 1);
   return true;
 }
 
-export function createRoom(name: string, socketId: string, now = Date.now()): Success<SeatGranted> | Failure {
+export function releaseSocket(address: string): void {
+  const current = socketsByAddress.get(address) ?? 0;
+  if (current <= 1) socketsByAddress.delete(address);
+  else socketsByAddress.set(address, current - 1);
+}
+
+function takeSlot(bucket: Map<string, number[]>, key: string, limit: number, now: number): boolean {
+  const recent = (bucket.get(key) ?? []).filter((stamp) => now - stamp < JOIN_WINDOW_MS);
+  if (recent.length >= limit) {
+    bucket.set(key, recent);
+    return false;
+  }
+  recent.push(now);
+  bucket.set(key, recent);
+  return true;
+}
+
+export function createRoom(
+  name: string,
+  socketId: string,
+  now = Date.now(),
+  address = "local",
+): Success<SeatGranted> | Failure {
   if (rooms.size >= MAX_ROOMS) return fail("The table is full. Try again in a little while.");
+  let openForAddress = 0;
+  for (const existing of rooms.values()) {
+    if (existing.creatorAddress === address) openForAddress += 1;
+  }
+  if (openForAddress >= MAX_ROOMS_PER_ADDRESS) return fail("You already have a room open.");
   const { seat, token } = makeSeat(name, socketId, new Set());
   const code = freshCode();
   const room: Room = {
@@ -138,9 +177,10 @@ export function createRoom(name: string, socketId: string, now = Date.now()): Su
     openedAt: now,
     startedAt: null,
     finishedAt: null,
+    creatorAddress: address,
   };
   rooms.set(code, room);
-  console.info(`room created ${code}`);
+  console.info("room created");
   return { ok: true, room: toPublic(room), session: toSession(room, seat, token) };
 }
 
@@ -156,7 +196,7 @@ export function joinRoom(code: string, name: string, socketId: string): Success<
   room.players.set(seat.id, seat);
   room.emptySince = null;
   touch(room);
-  console.info(`room joined ${room.code}`);
+  console.info("room joined");
   return { ok: true, room: toPublic(room), session: toSession(room, seat, token) };
 }
 
@@ -170,7 +210,7 @@ export function rejoinRoom(
   if (!room) return fail("That room does not exist.");
   const seat = room.players.get(playerId);
   if (!seat || !reconnectTokenMatches(token, seat.tokenHash)) {
-    console.info(`rejoin rejected ${room.code}`);
+    console.info("rejoin rejected");
     return fail("That code does not match a seat.");
   }
   const previousSocketId = seat.socketId;
@@ -180,7 +220,7 @@ export function rejoinRoom(
   seat.hostGraceHandled = false;
   room.emptySince = null;
   touch(room);
-  console.info(`room rejoin ${room.code}`);
+  console.info("room rejoin");
   return {
     ok: true,
     room: toPublic(room),
@@ -198,7 +238,7 @@ export function disconnectSocket(socketId: string, now = Date.now()): string | n
     seat.disconnectedAt = now;
     if ([...room.players.values()].every((player) => !player.connected)) room.emptySince = now;
     touch(room);
-    console.info(`disconnect ${room.code}`);
+    console.info("disconnect");
     return room.code;
   }
   return null;
@@ -237,7 +277,7 @@ export function startMatch(code: string, playerId: string): Success<{ room: Publ
   located.room.finishedAt = null;
   for (const seat of located.room.players.values()) seat.ready = false;
   touch(located.room);
-  console.info(`room started ${located.room.code}`);
+  console.info("room started");
   return { ok: true, room: toPublic(located.room) };
 }
 
@@ -253,7 +293,7 @@ export function playMove(code: string, playerId: string, rawMove: unknown): Succ
   if (battleshipEngine.getOutcome(located.room.game)) {
     located.room.phase = "finished";
     located.room.finishedAt = Date.now();
-    console.info(`room finished ${located.room.code}`);
+    console.info("room finished");
   }
   touch(located.room);
   return { ok: true, room: toPublic(located.room) };
@@ -268,7 +308,7 @@ export function leaveRoom(code: string, playerId: string): Success<LeaveGranted>
     room.game = forfeit(room.game, playerId);
     room.phase = "finished";
     room.finishedAt = Date.now();
-    console.info(`forfeit ${room.code}`);
+    console.info("forfeit");
   }
   touch(room);
   if (room.game && room.game.playerIds.includes(playerId)) {
@@ -282,7 +322,7 @@ export function leaveRoom(code: string, playerId: string): Success<LeaveGranted>
   room.players.delete(playerId);
   if (room.players.size === 0) {
     rooms.delete(room.code);
-    console.info(`room closed ${room.code}`);
+    console.info("room closed");
     return { ok: true, closed: true, room: null, departedSocketId, departedUpdate };
   }
   if (room.hostId === playerId) passHost(room);
@@ -300,7 +340,7 @@ export function endMatch(code: string, playerId: string): Success<{ room: Public
   located.room.phase = "finished";
   located.room.finishedAt = Date.now();
   touch(located.room);
-  console.info(`room ended ${located.room.code}`);
+  console.info("room ended");
   return { ok: true, room: toPublic(located.room) };
 }
 
@@ -319,7 +359,7 @@ export function restartMatch(code: string, playerId: string): Success<{ room: Pu
     seat.wantsRematch = false;
   }
   touch(located.room);
-  console.info(`room rematch ${located.room.code}`);
+  console.info("room rematch");
   return { ok: true, room: toPublic(located.room) };
 }
 
@@ -378,7 +418,7 @@ export function sweep(now = Date.now()): { closed: string[]; changed: string[] }
       rooms.delete(room.code);
       queues.delete(room.code);
       closed.push(room.code);
-      console.info(`room expired ${room.code}`);
+      console.info("room expired");
       continue;
     }
     if (dirty) {
@@ -386,12 +426,17 @@ export function sweep(now = Date.now()): { closed: string[]; changed: string[] }
       changed.push(room.code);
     }
   }
-  for (const [key, stamps] of attempts) {
-    const recent = stamps.filter((stamp) => now - stamp < JOIN_WINDOW_MS);
-    if (recent.length === 0) attempts.delete(key);
-    else if (recent.length !== stamps.length) attempts.set(key, recent);
-  }
+  pruneBucket(attempts, now);
+  pruneBucket(events, now);
   return { closed, changed };
+}
+
+function pruneBucket(bucket: Map<string, number[]>, now: number): void {
+  for (const [key, stamps] of bucket) {
+    const recent = stamps.filter((stamp) => now - stamp < JOIN_WINDOW_MS);
+    if (recent.length === 0) bucket.delete(key);
+    else if (recent.length !== stamps.length) bucket.set(key, recent);
+  }
 }
 
 function viewsFor(room: Room): PlayerView[] {

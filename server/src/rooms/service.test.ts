@@ -2,8 +2,12 @@ import { describe, expect, it, vi } from "vitest";
 import {
   EMPTY_LOBBY_MS,
   MAX_ROOMS,
+  MAX_ROOMS_PER_ADDRESS,
+  MAX_SOCKETS_PER_ADDRESS,
   RECONNECT_GRACE_MS,
   allowAttempt,
+  allowEvent,
+  claimSocket,
   createRoom,
   disconnectSocket,
   enqueue,
@@ -12,6 +16,7 @@ import {
   playMove,
   queueDepth,
   rejoinRoom,
+  releaseSocket,
   resetRooms,
   snapshot,
   startMatch,
@@ -158,10 +163,39 @@ describe("rooms", () => {
   it("stops opening rooms once the table is full", () => {
     resetRooms();
     for (let count = 0; count < MAX_ROOMS; count += 1) {
-      const created = createRoom(`Ada${count}`, `sock-${count}`);
+      const created = createRoom(`Ada${count}`, `sock-${count}`, 1_000, `10.2.0.${count}`);
       expect(created.ok).toBe(true);
     }
-    const extra = createRoom("Bea", "sock-extra");
+    const extra = createRoom("Bea", "sock-extra", 1_000, "10.9.9.9");
     expect(extra.ok).toBe(false);
+  });
+
+  it("lets one address keep only two rooms open", () => {
+    resetRooms();
+    expect(createRoom("Ada", "sock-1", 1_000, "10.4.4.4").ok).toBe(true);
+    expect(createRoom("Ada", "sock-2", 1_000, "10.4.4.4").ok).toBe(true);
+    const third = createRoom("Ada", "sock-3", 1_000, "10.4.4.4");
+    expect(third.ok).toBe(false);
+    expect(createRoom("Bea", "sock-4", 1_000, "10.4.4.5").ok).toBe(true);
+    expect(MAX_ROOMS_PER_ADDRESS).toBe(2);
+  });
+
+  it("stops one address from holding every connection", () => {
+    resetRooms();
+    for (let count = 0; count < MAX_SOCKETS_PER_ADDRESS; count += 1) {
+      expect(claimSocket("10.8.8.8")).toBe(true);
+    }
+    expect(claimSocket("10.8.8.8")).toBe(false);
+    expect(claimSocket("10.8.8.9")).toBe(true);
+    releaseSocket("10.8.8.8");
+    expect(claimSocket("10.8.8.8")).toBe(true);
+  });
+
+  it("limits how fast one address can send game events", () => {
+    resetRooms();
+    const now = 9_000;
+    for (let count = 0; count < 120; count += 1) expect(allowEvent("10.7.7.7", now)).toBe(true);
+    expect(allowEvent("10.7.7.7", now)).toBe(false);
+    expect(allowEvent("10.7.7.8", now)).toBe(true);
   });
 });

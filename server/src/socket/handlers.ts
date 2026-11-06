@@ -11,6 +11,8 @@ import {
 import type { ClientAck } from "@boardroom/shared";
 import {
   allowAttempt,
+  allowEvent,
+  claimSocket,
   createRoom,
   disconnectSocket,
   endMatch,
@@ -24,6 +26,7 @@ import {
   rejoinRoom,
   restartMatch,
   setReady,
+  releaseSocket,
   snapshot,
   startMatch,
   withinSocketCap,
@@ -40,6 +43,12 @@ function ackOf(ack: unknown): (result: ClientAck) => void {
 
 function addressOf(socket: Socket): string {
   return socket.handshake.address || socket.id;
+}
+
+function paced(socket: Socket, reply: (result: ClientAck) => void): boolean {
+  if (allowEvent(addressOf(socket))) return true;
+  reply({ ok: false, message: "Too many attempts. Wait a minute and try again." });
+  return false;
 }
 
 function bind(socket: Socket, code: string, playerId: string): void {
@@ -87,7 +96,8 @@ async function releaseOtherRoom(io: Server, socket: Socket, nextCode: string): P
 
 export function attachSockets(io: Server): void {
   io.on("connection", (socket) => {
-    if (!withinSocketCap(io.sockets.sockets.size)) {
+    const address = addressOf(socket);
+    if (!withinSocketCap(io.sockets.sockets.size) || !claimSocket(address)) {
       socket.disconnect(true);
       return;
     }
@@ -104,7 +114,7 @@ export function attachSockets(io: Server): void {
       }
       void enqueue(`create:${socket.id}`, async () => {
         await releaseOtherRoom(io, socket, "");
-        const created = createRoom(parsed.data.name, socket.id);
+        const created = createRoom(parsed.data.name, socket.id, Date.now(), addressOf(socket));
         if (!created.ok) {
           reply(created);
           return;
@@ -178,6 +188,7 @@ export function attachSockets(io: Server): void {
 
     socket.on("room:ready", (payload: unknown, ack?: unknown) => {
       const reply = ackOf(ack);
+      if (!paced(socket, reply)) return;
       const seat = seated(socket);
       const parsed = readySchema.safeParse(payload);
       if (!seat || !parsed.success) {
@@ -197,6 +208,7 @@ export function attachSockets(io: Server): void {
 
     socket.on("room:kick", (payload: unknown, ack?: unknown) => {
       const reply = ackOf(ack);
+      if (!paced(socket, reply)) return;
       const seat = seated(socket);
       const parsed = kickSchema.safeParse(payload);
       if (!seat || !parsed.success) {
@@ -220,6 +232,7 @@ export function attachSockets(io: Server): void {
 
     socket.on("room:configure", (payload: unknown, ack?: unknown) => {
       const reply = ackOf(ack);
+      if (!paced(socket, reply)) return;
       const parsed = configureSchema.safeParse(payload);
       if (!seated(socket) || !parsed.success) {
         reply({ ok: false, message: "Battleship is the game at this table." });
@@ -230,6 +243,7 @@ export function attachSockets(io: Server): void {
 
     socket.on("room:start", (_payload: unknown, ack?: unknown) => {
       const reply = ackOf(ack);
+      if (!paced(socket, reply)) return;
       const seat = seated(socket);
       if (!seat) {
         reply({ ok: false, message: "Sit down before you start." });
@@ -248,6 +262,7 @@ export function attachSockets(io: Server): void {
 
     socket.on("room:restart", (_payload: unknown, ack?: unknown) => {
       const reply = ackOf(ack);
+      if (!paced(socket, reply)) return;
       const seat = seated(socket);
       if (!seat) {
         reply({ ok: false, message: "Sit down before you start a rematch." });
@@ -266,6 +281,7 @@ export function attachSockets(io: Server): void {
 
     socket.on("room:end", (_payload: unknown, ack?: unknown) => {
       const reply = ackOf(ack);
+      if (!paced(socket, reply)) return;
       const seat = seated(socket);
       if (!seat) {
         reply({ ok: false, message: "Sit down before you end the match." });
@@ -284,6 +300,7 @@ export function attachSockets(io: Server): void {
 
     socket.on("room:leave", (_payload: unknown, ack?: unknown) => {
       const reply = ackOf(ack);
+      if (!paced(socket, reply)) return;
       const seat = seated(socket);
       if (!seat) {
         reply({ ok: false, message: "You are not in a room." });
@@ -307,6 +324,7 @@ export function attachSockets(io: Server): void {
 
     socket.on("game:move", (payload: unknown, ack?: unknown) => {
       const reply = ackOf(ack);
+      if (!paced(socket, reply)) return;
       const seat = seated(socket);
       if (!seat) {
         reply({ ok: false, message: "Sit down before you play." });
@@ -325,6 +343,7 @@ export function attachSockets(io: Server): void {
 
     socket.on("game:nudge", (payload: unknown, ack?: unknown) => {
       const reply = ackOf(ack);
+      if (!paced(socket, reply)) return;
       const seat = seated(socket);
       const parsed = nudgeSchema.safeParse(payload);
       if (!seat || !parsed.success) {
@@ -343,6 +362,7 @@ export function attachSockets(io: Server): void {
     });
 
     socket.on("disconnect", () => {
+      releaseSocket(address);
       const code = (socket.data as SeatBinding).code;
       const drop = () => {
         const gone = disconnectSocket(socket.id);
